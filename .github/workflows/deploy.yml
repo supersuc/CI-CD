@@ -1,7 +1,7 @@
-name: Deploy Pages
+name: Deploy
 
 on:
-  # 合并到 main 后自动部署。分支保护规则保证此时 CI 已通过
+  # 合并到 main 后自动构建。部署阶段需人工审批，见下方 deploy job
   push:
     branches: [main]
   # 支持手动触发，便于调试
@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 阶段一：自动构建，无需人工介入
   build:
     runs-on: ubuntu-latest
     steps:
@@ -50,6 +51,22 @@ jobs:
         with:
           path: dist
 
+      - name: 输出构建摘要
+        if: always()
+        run: |
+          {
+            echo "## 构建完成，等待人工审批部署"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "|------|-----|"
+            echo "| 版本 | #${{ github.run_number }} |"
+            echo "| 提交 | \`${{ github.sha }}\` |"
+            echo "| 触发人 | ${{ github.actor }} |"
+            echo ""
+            echo "**下一步**：需在上方 deploy 作业中点击 Review deployments 批准后才会发布上线。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # 阶段二：部署，受环境保护规则约束，需人工审批后才执行
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -57,6 +74,26 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: 记录审批通过
+        run: |
+          echo "审批已通过，开始部署 ${{ github.sha }}"
+          {
+            echo "## 审批已通过，正在部署"
+            echo ""
+            echo "- 审批人: ${{ github.actor }}"
+            echo "- 提交: \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 部署到 Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+      - name: 输出部署结果
+        if: always()
+        run: |
+          {
+            echo "## 部署结果"
+            echo ""
+            echo "- 状态: ${{ job.status }}"
+            echo "- 站点: ${{ steps.deployment.outputs.page_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
